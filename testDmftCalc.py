@@ -15,9 +15,9 @@ C10 = DmftCalc(beta,gf_struct,dispersions,h_int,mu,ks,defaultSolverInputs = {'n_
 C10.runDmftLoop(nloops = nloops)
 C20 = DmftCalc(beta,gf_struct,dispersions,h_int,mu,ks,defaultSolverInputs = {'n_cycles' : 20000, 'length_cycle' : 100, 'n_warmup_cycles' : 4000})
 C20.runDmftLoop(nloops = nloops)
-C40 = DmftCalc(beta,gf_struct,dispersions,h_int,mu,ks,defaultSolverInputs = {'n_cycles' : 10*40000, 'length_cycle' : 100, 'n_warmup_cycles' : 10*8000})
-C40.runDmftLoop(nloops = 10)
-oplot(C40.S.G_iw['up'],label = "hubbard")
+C = DmftCalc(beta,gf_struct,dispersions,h_int,mu,ks,defaultSolverInputs = {'n_cycles' : 10*40000, 'length_cycle' : 100, 'n_warmup_cycles' : 10*8000})
+C.runDmftLoop(nloops = 10)
+oplot(C.S.G_iw['up'],label = "hubbard")
 #C80 = DmftCalc(beta,gf_struct,dispersions,h_int,mu,ks,defaultSolverInputs = {'n_cycles' : 80000, 'length_cycle' : 100, 'n_warmup_cycles' : 16000})
 #C80.runDmftLoop(nloops = 20)
 #C160 = DmftCalc(beta,gf_struct,dispersions,h_int,mu,ks,defaultSolverInputs = {'n_cycles' : 160000, 'length_cycle' : 100, 'n_warmup_cycles' : 32000})
@@ -25,7 +25,7 @@ oplot(C40.S.G_iw['up'],label = "hubbard")
 
 """plt.plot(C10.mudensities[mu],label = "10k cycles")
 plt.plot(C20.mudensities[mu],label = "20k cycles")
-plt.plot(C40.mudensities[mu],label = "40k cycles")
+plt.plot(C.mudensities[mu],label = "40k cycles")
 #plt.plot(C80.mudensities[mu],label = "80k cycles")
 #plt.plot(C160.mudensities[mu],label = "160k cycles")
 plt.xlabel("dmft loop iteration")
@@ -37,7 +37,7 @@ plt.show()"""
 # example with Sigma eph
 omega = 0.2
 g = 0.1
-Sigma_ephk = {k:C40.S.Sigma_iw.copy() for k in ks}
+Sigma_ephk = {k:C.S.Sigma_iw.copy() for k in ks}
 
 k0 = ks[0]
 Sigma_ephk[k0].zero()
@@ -56,6 +56,6 @@ for k in ks[1:]:
     # works since they are k independent
 
 for mufact in [1.0,1.2,1.4,1.5,1.6]:
-    C40.updatemu(U/2 * mufact,Sigmak = lambda k : Sigma_ephk[k])
-    C40.runDmftLoop(nloops = 10, Sigmak = lambda k: Sigma_ephk[k])
-    oplot(C40.S.G_iw['up'],label = "hubbard holstein")
+    C.updatemu(U/2 * mufact,Sigmak = lambda k : Sigma_ephk[k])
+    C.runDmftLoop(nloops = 10, Sigmak = lambda k: Sigma_ephk[k])
+    oplot(C.S.G_iw['up'],label = "hubbard holstein")
