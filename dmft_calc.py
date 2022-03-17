@@ -6,6 +6,7 @@ from triqs.plot.mpl_interface import oplot,plt
 from triqs import operators as tops
 import triqs_cthyb
 from h5 import *
+import triqs.utility.mpi as mpi
 import time
 
 class DmftCalc():
