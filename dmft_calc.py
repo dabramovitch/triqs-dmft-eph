@@ -8,6 +8,11 @@ import triqs_cthyb
 from h5 import *
 import triqs.utility.mpi as mpi
 import time
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
 
 class DmftCalc():
     def __init__(self,beta, gf_struct, dispersions, h_int,mu, ks,solver = triqs_cthyb.Solver,defaultSolverInputs = {'n_cycles' : 20000, 'length_cycle' : 100, 'n_warmup_cycles' : 4000},verbosity = "high"):
@@ -28,14 +33,27 @@ class DmftCalc():
         self.verbosity = verbosity
         self.updateGFs()
 
-    def calcGk_iw(self, Sigmak = lambda k : 0 ):
-        for k in self.ks:
-            sigmak = self.S.Sigma_iw.copy()
-            sigmak << sigmak + Sigmak(k)
-            self.Gks[k].zero()
-            for name,indices in self.gf_struct:
-                for i in indices:
-                    self.Gks[k][name][i,i] << inverse(iOmega_n - self.dispersions[(name,i)](k) + self.mu - sigmak[name][i,i])
+    def calcGk_iw(self, Sigmak = lambda k : 0,parallel = True):
+        if parallel:
+            ksprocs = {iproc : self.ks[iproc::size] for iproc in range(size)}
+            for k in ksprocs[rank]:
+                sigmak = self.S.Sigma_iw.copy()
+                sigmak << sigmak + Sigmak(k)
+                self.Gks[k].zero()
+                for name,indices in self.gf_struct:
+                    for i in indices:
+                        self.Gks[k][name][i,i] << inverse(iOmega_n - self.dispersions[(name,i)](k) + self.mu - sigmak[name][i,i])
+            for iproc in range(size):
+                for k in ksprocs[iproc]:
+                    self.Gks[k] << comm.bcast(self.Gks[k],root = iproc)
+        else:
+            for k in self.ks:
+                sigmak = self.S.Sigma_iw.copy()
+                sigmak << sigmak + Sigmak(k)
+                self.Gks[k].zero()
+                for name,indices in self.gf_struct:
+                    for i in indices:
+                        self.Gks[k][name][i,i] << inverse(iOmega_n - self.dispersions[(name,i)](k) + self.mu - sigmak[name][i,i])
 
     def calcGimp_iw(self):
         self.S.G0_iw.zero()
@@ -55,7 +73,7 @@ class DmftCalc():
         self.S.solve(h_int = self.h_int,**kwargs)
 
     def runDmftLoop(self,nloops = 1,Sigmak = lambda k : 0,**solverkwargs):
-        # ToDo: add ramp up capability for ncycles 
+        # ToDo: add ramp up capability for ncycles
         for i in range(nloops):
             tstart = time.time()
             self.solveImpurity(**solverkwargs)
