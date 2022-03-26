@@ -23,10 +23,15 @@ class DmftCalc():
         self.mu = mu
         self.mudensities = {mu:[]}
         self.ks = ks
+        self.ksprocs = {iproc : self.ks[iproc::size] for iproc in range(size)}
+        self.kprockey = {}
+        for iproc in range(size):
+            for k in self.ksprocs[iproc]:
+                self.kprockey[k] = iproc
         self.Nk = len(self.ks)
         self.S = solver(beta = self.beta, gf_struct = self.gf_struct)
         self.S.Sigma_iw << mu
-        self.Gks = {k : self.S.G0_iw.copy() for k in ks}
+        self.Gks = {k : self.S.G0_iw.copy() if k in self.ksprocs[rank] else None for k in ks}
         # ^ arguably, this should not be stored since it can be calculated from much less information in some cases
         self.timeSC,self.timeImp = 0.0,0.0
         self.defaultSolverInputs = defaultSolverInputs
@@ -35,17 +40,17 @@ class DmftCalc():
 
     def calcGk_iw(self, Sigmak = lambda k : 0,parallel = True):
         if parallel:
-            ksprocs = {iproc : self.ks[iproc::size] for iproc in range(size)}
-            for k in ksprocs[rank]:
+            #ksprocs = {iproc : self.ks[iproc::size] for iproc in range(size)}
+            for k in self.ksprocs[rank]:
                 sigmak = self.S.Sigma_iw.copy()
                 sigmak << sigmak + Sigmak(k)
                 self.Gks[k].zero()
                 for name,indices in self.gf_struct:
                     for i in indices:
                         self.Gks[k][name][i,i] << inverse(iOmega_n - self.dispersions[(name,i)](k) + self.mu - sigmak[name][i,i])
-            for iproc in range(size):
-                for k in ksprocs[iproc]:
-                    self.Gks[k] << comm.bcast(self.Gks[k],root = iproc)
+            #for iproc in range(size):
+            #    for k in ksprocs[iproc]:
+            #        self.Gks[k] << comm.bcast(self.Gks[k],root = iproc)
         else:
             for k in self.ks:
                 sigmak = self.S.Sigma_iw.copy()
@@ -55,12 +60,41 @@ class DmftCalc():
                     for i in indices:
                         self.Gks[k][name][i,i] << inverse(iOmega_n - self.dispersions[(name,i)](k) + self.mu - sigmak[name][i,i])
 
-    def calcGimp_iw(self):
+    def getGk_iw(self,k):
+        # use kpoint process key self.kprockey to look up G(k) from correct process
+        proc = self.kprockey[k]
+        Gk = self.S.G0_iw.copy()
+        if rank == proc:
+            Gk << self.Gks[k]
+        Gk << comm.bcast(Gk, root = proc)
+        return Gk
+
+    def calcGimp_iw(self,parallel = True):
         self.S.G0_iw.zero()
         Gimp = self.S.G0_iw.copy()
-        for k in self.ks:
-            Gimp << Gimp + self.Gks[k]
-        Gimp << Gimp / self.Nk
+        if parallel:
+            kprocsum = self.S.G_iw.copy() # sum for just this
+            kprocsum.zero()
+            for k in self.ksprocs[rank]:
+                kprocsum << kprocsum + self.Gks[k]
+            if rank == 0:
+                Gimp << kprocsum
+            for irank in range(1,size):
+                if rank == irank:
+                    print("rank: ", rank, " sending")
+                    comm.send(kprocsum,dest = 0)
+                    print("rank: ", rank, " sent")
+                if rank == 0:
+                    print("rank: ", rank, " receiving")
+                    Gimp << Gimp + comm.recv(source = irank)
+                    print("rank: ", rank, " received")
+            if rank == 0:
+                Gimp << Gimp / self.Nk
+            Gimp << comm.bcast(Gimp,root = 0)
+        else:
+            for k in self.ks:
+                Gimp << Gimp + self.Gks[k]
+            Gimp << Gimp / self.Nk
         self.S.G0_iw << tools.dyson(G_iw = Gimp, Sigma_iw = self.S.Sigma_iw)
 
     def updateGFs(self,Sigmak = lambda k : 0):
